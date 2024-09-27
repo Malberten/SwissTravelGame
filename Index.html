@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+     integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+     crossorigin=""/>
+     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+     integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+     crossorigin=""></script>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 20px; }
+      #loginForm { display: flex; flex-direction: column; max-width: 300px; }
+      select, input, button { margin-bottom: 10px; padding: 5px; }
+      #gameContent { display: none; }
+      #ticketOptions { margin-top: 20px; border: 1px solid #ccc; padding: 10px; }
+      .ticket-option { margin-bottom: 10px; }
+      #debug { margin-top: 20px; border: 1px solid red; padding: 10px; }
+      #map { height: 600px}
+    </style>
+  </head>
+  <body>
+    <h1>Switzerland Travel Game</h1>
+    
+    <div id="loginSection">
+      <h2>Login</h2>
+      <form id="loginForm">
+        <select id="teamSelect">
+          <option value="Team A">Team A</option>
+          <option value="Team B">Team B</option>
+        </select>
+        <input type="password" id="accessCode" placeholder="Access Code">
+        <input type="submit" value="Login">
+      </form>
+      <div id="loginError" style="color: red;"></div>
+    </div>
+
+    <div id="gameContent">
+      <h2 id="teamInfo"></h2>
+     
+      <div id="map"></div>
+       
+
+       <div id="ticketSection" style="display:block;">
+  <h3>Draw Tickets</h3>
+  <div id="availableTickets"></div> 
+  <p><b>Attention:</b> Once you click the following button, you immediately spend <b>15 Coins</b> and you have to choose at least one of the 5 Tickets (or less if less than 5 tickets are left in the stack).</p>
+      <button onclick="drawTickets()">Draw Tickets</button>
+</div>
+<div id="ticketOptionsSection" style="display:none;">
+  <h3>Select Tickets</h3>
+  <p> You have to select at least one of the following tickets:</p>
+  <div id="ticketList"></div>
+  <button onclick="confirmTicketSelection()">Confirm Selection</button>
+</div>
+
+      <div id="claimInitiation" style="display:block;">
+        <h3>Claim a Route</h3>
+       <button id="initiateClaimButton" onclick="initiateClaimRoute()">Set Start Location for the claim</button>
+       <select id="claimStationDropdown" style="display:none;"></select>
+       <button id="selectStationButton" onclick="selectStartStation()" style="display:none;">Select Station</button>
+       <div id="startStation" style="display:none;"></div>
+       <button id="startClaimButton" onclick="startClaim()" style="display:none;">Start the claim</button>
+    </div>
+    <div id="claimSection" style="display:none;">
+      <h3>Finish the route claim</h3>
+      <div id="startStationFinish" style="display:block;"></div>
+      <button id="finishClaimButton" onclick="finishClaimRoute()" style="display:block;">Finish Claim</button>
+      <button id="abortClaimButton" onclick="abortClaim()" style="display:block;">Abort Claim</button>
+      <select id="routeDropdown" style="display:none;"></select>
+      <input type="text" id="trainNumberInput" placeholder="Enter train number" style="display:none;">
+      <button id="claimRouteButton" onclick="claimSelectedRoute()" style="display:none;">Claim Route</button>
+    </div>
+
+
+
+<div id="challengeSection" style="display:block;">
+  <h3>Complete a challenge</h3>
+  <p><b>Attention:</b> Once you draw challenges, you will be provided with three random challenge options. If none of them suits you, you can cancel, but it will cost you 20% of your current Coins.</p>
+      <button onclick="initiateChallenge()">Set Challenge Location</button>
+      <select id="challengeStationDropdown" style="display:none;"></select>
+       <button id="selectLocationButton" onclick="selectChallengeLocation()" style="display:none;">Select Location</button>
+       <div id="challengeLocation" style="display:none;"></div>
+      <button id="drawChallengeButton" onclick="drawChallenges()" style="display:none;">Draw Challenges</button>
+</div>
+<div id="challengeOptionsSection" style="display:none;">
+  <h3>Select the completed challenge</h3>
+  <p> Once you completed one of the following challenges, select and confirm. If you cancel, it will cost you 20 % of your current Coins.</p>
+  <div id="challengeLocationFinish" style="display:block;"></div>
+  <div id="challengeList"></div>
+  <button onclick="confirmChallengeSelection()">Confirm</button>
+  <button onclick="cancelChallengeSelection()">Cancel</button>
+</div>
+      <div id="gameStatus"></div>
+      <div id="teamTickets"></div>
+      <div id="allChallengeList"></div>
+      
+    </div>
+
+    
+
+    <script>
+      let currentTeamId = '';
+      let currentTicketOptions = [];
+      var map;
+      var data = {};
+      var stations = {};
+      var routes = {};
+      var gameStatus;
+      let markers = [];
+      let routeLayers = [];
+      let ticketMarkers = [];
+      var teamTickets ={};
+      let selectedTickets = [];
+      let selectedChallenges = [];
+      var globalChallenges = {};
+      let pollingInterval;
+      const ticketColors = ['#FF5733', '#33FF57', '#3357FF', '#FF33F1', '#33FFF1'];
+
+      //let startStationId;
+
+      document.getElementById('loginForm').onsubmit = function(e) {
+        e.preventDefault();
+        const teamId = document.getElementById('teamSelect').value;
+        const accessCode = document.getElementById('accessCode').value;
+        google.script.run
+          .withSuccessHandler(function(isValid) {
+            if (isValid) {
+              currentTeamId = teamId;
+              console.log("Current Team Id:",currentTeamId)
+              document.getElementById('loginSection').style.display = 'none';
+              document.getElementById('gameContent').style.display = 'block';
+              document.getElementById('teamInfo').textContent = 'Your Team: ' + teamId;
+               console.log("These are the stations: ",stations);
+              //stations = data.stations;
+              //routes = data.routes;
+              createChallengeList();
+              
+              //console.log("Challenges", globalChallenges)//,Object.keys(globalChallenges))
+              map = initializeMap();
+              updateDisplay(data);
+              //console.log("One specific challenge",allChallenges["CH02"])
+              //updateGameStatusDisplay();
+              //updateTicketDisplay();
+            } else {
+              document.getElementById('loginError').textContent = 'Invalid access code';
+            }
+          })
+          .validateTeamAccess(teamId, accessCode);
+      };
+
+      function initializeMap(){
+
+        console.log('Initializing map...');
+        map = L.map('map').setView([46.8182, 8.2275], 8);
+        
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19,
+          attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+        console.log('Map initialized');
+        //var marker = L.marker([46.82, 8.23]).addTo(map);
+        //marker.bindPopup(`<b>Center of Switzerland`);
+        addStationsAndRoutes(stations, map);
+        updateMap(routes);
+  
+      return map;
+      };
+
+  function getChallengesWithDelay(callback) {
+    setTimeout(function() {
+        if (Object.keys(globalChallenges).length > 0) {
+            callback(globalChallenges);
+        } else {
+            console.log("Challenges not loaded yet, retrying...");
+            getChallengesWithDelay(callback);
+        }
+    }, 100); // 100ms delay
+}
+
+      function addStationsAndRoutes(stations, map) {
+        
+        //stations = data.stations;
+        console.log('Data received:', stations);
+        //routes = data.routes;
+        //var marker = L.marker([46.95, 7.44]).addTo(map);
+        //marker.bindPopup(`<b>Bern</b><br>Canton: Bern<br>Altitude: 551 m`);
+        
+        
+        getChallengesWithDelay(function(challenges){
+        // Add stations
+        Object.values(stations).forEach(station => {
+          
+          const lat = station.lat;
+          const lon = station.lon;
+          let possibleGeneralChallengeIds = station.possibleGeneralChallenges
+          let possibleLocalChallengeIds = station.possibleSpecialChallenges
+          
+          var possibleChallenges = ""; 
+
+
+          
+            
+            if(possibleLocalChallengeIds[0]){
+              possibleLocalChallengeIds.forEach(challenge =>{
+                console.log("Challenges:",challenges[challenge])
+                possibleChallenges += challenges[challenge].title+"; "
+                
+              })
+            }
+            possibleGeneralChallengeIds.forEach(challenge =>{
+              possibleChallenges += challenges[challenge].title+"; "
+            })
+          
+          let marker = L.circleMarker([lat, lon], {
+            radius: 5,
+            fillColor: "#808080",
+            color: "#000",
+            weight: 1,
+            opacity: 1,
+            fillOpacity: 0.8
+          }).addTo(map);
+          marker.bindPopup(`<b>${station.name}</b><br>Canton: ${station.canton}<br>Altitude: ${station.altitude} m<br>Possible Challenges: ${possibleChallenges}
+          `);
+          })
+        });
+  }
+
+  function createChallengeList(){
+    var challengeListElement = document.getElementById("allChallengeList");
+    challengeListElement.innerHTML = "<h3>List of all challenges</h3>"
+    
+    google.script.run
+    .withSuccessHandler(function(response){
+      let challenges = response[0];
+      challenges.forEach(challenge=>{
+        challengeListElement.innerHTML += `
+          <p><b>${challenge.title}</b> (${challenge.region}) for ${challenge.reward} Coins:<br> ${challenge.text}<br><br></p>
+      `;
+      })
+       globalChallenges = response[1];
+
+       console.log("Challenges loaded:", Object.keys(globalChallenges));
+    }) 
+    .createListOfChallenges();
+    
+  }
+
+//Ticket functions
+
+
+function drawTickets() {
+  document.getElementById('ticketSection').style.display = 'none';
+  document.getElementById('claimInitiation').style.display = 'none';
+  document.getElementById('challengeSection').style.display = 'none';
+  document.getElementById('ticketOptionsSection').style.display = 'block';
+  
+  google.script.run
+    .withSuccessHandler(displayTicketOptions)
+    .generateTicketOptions(currentTeamId);
+}
+
+function displayTicketOptions(tickets) {
+  if(tickets.message){
+    let message = tickets.message;
+    if (message === "Not enough coins to draw tickets") {
+      alert("You don't have enough coins to draw new tickets (at least 15 are needed). Complete a challenge before you can draw tickets.");
+      cancelTicketSelection();
+      return;
+    }
+    else if (message === "No tickets left") {
+      alert("There are no tickets left.");
+      cancelTicketSelection();
+      return;
+    }
+  }
+
+  let ticketList = document.getElementById('ticketList');
+  ticketList.innerHTML = '';
+
+  tickets.forEach((ticket, index) => {
+    let ticketDiv = document.createElement('div');
+    let color = ticketColors[index];
+    ticketDiv.innerHTML = `
+      <input type="checkbox" id="ticket${index}" onchange="toggleTicket(${index})">
+      <label for="ticket${index}" style="color:${color}">${ticket.from.name} to ${ticket.to.name} (${ticket.points} points)"</label>
+    `;
+    ticketList.appendChild(ticketDiv);
+    
+    addTicketToMap(ticket, color, index);
+    selectedTickets[index] = ticket;
+  });
+  
+  
+}
+
+function addTicketToMap(ticket, color, index) {
+  //let color = ticketColors[index];
+
+  let startMarker = L.circleMarker([ticket.from.lat, ticket.from.lon], {
+    color: color,
+    fillColor: color,
+    fillOpacity: 0.8,
+    radius: 8
+  }).addTo(map);
+  startMarker.bindPopup(`Ticket ${index + 1} Start: ${ticket.from.name}`);
+  
+  let endMarker = L.circleMarker([ticket.to.lat, ticket.to.lon], {
+    color: color,
+    fillColor: color,
+    fillOpacity: 0.8,
+    radius: 8
+  }).addTo(map);
+  endMarker.bindPopup(`Ticket ${index + 1} End: ${ticket.to.name}`);
+
+  let line = L.polyline([
+    [ticket.from.lat, ticket.from.lon],
+    [ticket.to.lat, ticket.to.lon]
+  ], {color: color, dashArray: '5, 5', weight: 5}).addTo(map);
+  line.bindPopup(`<b>Ticket ${index + 1}:<br><b>${ticket.from.name} (${ticket.from.canton})</b> to ${ticket.to.name} (${ticket.to.canton})</b><br>Points: ${ticket.points}`);
+  
+  ticketMarkers.push(startMarker, endMarker, line);
+}
+
+function toggleTicket(index) {
+  selectedTickets[index].selected = document.getElementById(`ticket${index}`).checked;
+}
+
+function confirmTicketSelection() {
+  let selectedTicketData = selectedTickets.filter(ticket => ticket.selected);
+  console.log("Selected Tickets: ",selectedTicketData)
+  if (selectedTicketData.length < 1){
+    alert ("Please select at least one ticket.")
+    return;
+  }
+  google.script.run
+    .withSuccessHandler(updateDisplay)
+    .saveSelectedTickets(currentTeamId, selectedTicketData);
+  
+  cancelTicketSelection();
+}
+
+function cancelTicketSelection() {
+  document.getElementById('ticketOptionsSection').style.display = 'none';
+  document.getElementById('ticketSection').style.display = 'block';
+  document.getElementById('claimInitiation').style.display = 'block';
+  document.getElementById('challengeSection').style.display = 'block';
+  
+  ticketMarkers.forEach(marker => map.removeLayer(marker));
+  ticketMarkers = [];
+  updateTicketDisplay();
+}
+
+
+
+
+
+//Route related functions
+
+function updateMap(routes) {
+
+  console.log("Updating map with routes:", routes);
+  // Clear existing routes
+  if (typeof routeLayers === 'undefined') {
+    routeLayers = [];
+  }
+  routeLayers.forEach(layer => map.removeLayer(layer));
+  routeLayers = [];
+
+  // Add updated routes
+  Object.values(routes).forEach(route => {
+    let from = stations[route.from];
+    let to = stations[route.to];
+    let color = getRouteColor(route.claimedBy);
+    let line = L.polyline([[from.lat, from.lon], [to.lat, to.lon]], {color: color, weight: 2}).addTo(map);
+    line.bindPopup(`<b>${from.name} (${route.fromCanton}) to ${to.name} (${route.toCanton})</b><br>Cost: ${route.cost} Coins<br>Reward: ${route.points} Points<br>Claimed by: ${route.claimedBy || 'Unclaimed'}`);
+    routeLayers.push(line);
+  });
+}
+
+function getRouteColor(claimedBy) {
+  if (!claimedBy) return 'blue';
+  return claimedBy === currentTeamId ? 'green' : 'red';
+}
+      
+function getUserLocation() {
+  return new Promise((resolve, reject) => {
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        position => {
+          resolve({
+            lat: position.coords.latitude,
+            lon: position.coords.longitude
+          });
+        },
+        error => {
+          reject(error);
+        }
+      );
+    } else {
+      reject(new Error("Geolocation is not supported by this browser."));
+    }
+  });
+}
+
+function findNearestStation(userLat, userLon, stations) {
+  let nearestStation = null;
+  let shortestDistance = Infinity;
+
+  for (let stationId in stations) {
+    let station = stations[stationId];
+    let distance = calculateDistance(userLat, userLon, station.lat, station.lon);
+    if (distance < shortestDistance) {
+      shortestDistance = distance;
+      nearestStation = station;
+    }
+  }
+
+  return nearestStation;
+}
+
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  // Haversine formula to calculate distance between two points on Earth
+  const R = 6371; // Radius of the Earth in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const distance = R * c; // Distance in km
+  return distance;
+}
+
+// Claim related functions
+
+function initiateClaimRoute() {
+  getUserLocation()
+    .then(location => {
+      const nearestStation = findNearestStation(location.lat, location.lon, stations);
+      if (nearestStation && calculateDistance(location.lat, location.lon, nearestStation.lat, nearestStation.lon) <= 2) {
+        setStartStationDisplay(nearestStation);
+      } else {
+        displayStationDropdown("claim");
+      }
+    })
+    .catch(error => {
+      console.error("Error getting user location:", error);
+      displayStationDropdown("claim");
+    });
+}
+
+
+
+function setStartStationDisplay(station){
+  setStartStationDiv(station.id)
+  document.getElementById('startStation').style.display = 'block';
+  document.getElementById('startClaimButton').style.display = 'block';
+   
+}
+
+function setStartStationDiv(stationId){
+  let startStationElement = document.getElementById('startStation');
+  let station = stations[stationId]
+  let locationText = `${station.name} (${station.canton}, ${station.altitude} m)`
+  startStationElement.innerHTML = `The claim will be started in ${locationText}`;
+  startStationElement.dataset.stationId = station.id;
+  document.getElementById('startStationFinish').innerHTML = `The claim has been started in ${locationText}. To finish or abort the claim, please click one of the buttons below.`
+}
+
+
+
+
+function displayStationDropdown(section) {
+  if(section === "claim"){
+    var dropdown = document.getElementById('claimStationDropdown');
+    var confirmButton = document.getElementById('selectStationButton');
+  }
+  else if (section === "challenge"){
+    var dropdown = document.getElementById('challengeStationDropdown');
+    var confirmButton = document.getElementById('selectLocationButton');
+  }
+  dropdown.innerHTML = '';
+  let stationArray = Object.values(stations).map(station => ({
+          id: station.id,
+          name: station.name,
+          canton: station.canton,
+          altitude: station.altitude
+        }));
+        
+        // Sort the array alphabetically by station name
+        stationArray.sort((a, b) => a.name.localeCompare(b.name));
+        
+        // Create and append sorted options
+        stationArray.forEach(station => {
+          let option = document.createElement('option');
+          option.value = station.id;
+          option.text = `${station.name} (${station.canton}, ${station.altitude} m)`;
+          dropdown.appendChild(option);
+        });
+  dropdown.style.display = 'block';
+  confirmButton.style.display = 'block';
+  
+}
+
+function selectStartStation() {
+  let stationId = document.getElementById('claimStationDropdown').value;
+  setStartStationDisplay(stations[stationId]);
+}
+
+function startClaim(){
+  let stationId = document.getElementById('startStation').dataset.stationId;
+  let station = stations[stationId];
+  document.getElementById('finishClaimButton').style.display = 'block'; 
+  document.getElementById('abortClaimButton').style.display = 'block'; 
+
+  document.getElementById('claimInitiation').style.display = 'none';
+
+  google.script.run
+    .withSuccessHandler(updateDisplay)
+    .withFailureHandler(handleError)
+    .initiateClaimInGameStatus(currentTeamId, station);
+    
+  // Send email to other team
+  google.script.run
+    .withFailureHandler(handleError)
+    .sendClaimInitiationEmail(currentTeamId, station); 
+}
+
+function handleError(error) {
+  console.error("Error:", error);
+  alert("An error occurred: " + error.message);
+}
+
+function abortClaim(){
+  google.script.run
+    .withSuccessHandler(updateDisplay)
+    .withFailureHandler(handleError)
+    .abortClaim(currentTeamId);
+    
+  // Send email to other team
+  google.script.run
+    .withFailureHandler(handleError)
+    .sendClaimAbortionEmail(currentTeamId); 
+  
+}
+
+function finishClaimRoute() {
+  var startStationId = document.getElementById('startStation').dataset.stationId;
+  console.log("Start Station Id:", startStationId)
+  let possibleRoutes = getPossibleRoutes(startStationId);
+  console.log("These routes are possible:", possibleRoutes)
+  displayRouteDropdown(possibleRoutes);
+  document.getElementById('trainNumberInput').style.display = 'block';
+}
+
+function getPossibleRoutes(startStationId) {
+  console.log("These are the data for the station:", stations[startStationId])
+  var getPossibleRouteIds = stations[startStationId].possibleRoutes;
+  var possibleRoutes = [];
+  getPossibleRouteIds.forEach(routeId => possibleRoutes.push(routes[routeId]));
+  return possibleRoutes;
+}
+
+function displayRouteDropdown(possibleRoutes) {
+  let dropdown = document.getElementById('routeDropdown');
+  dropdown.innerHTML = '';
+  possibleRoutes.forEach(route => {
+    let option = document.createElement('option');
+    option.value = route.id;
+    option.text = `${route.fromName} to ${route.toName} (${route.cost} Coins, ${route.points} Points)`;
+    dropdown.appendChild(option);
+  });
+  dropdown.style.display = 'block';
+  document.getElementById('claimRouteButton').style.display = 'block';
+}
+
+function claimSelectedRoute() {
+  let routeId = document.getElementById('routeDropdown').value;
+  var startStationId = document.getElementById('startStation').dataset.stationId;
+  let trainNumber = document.getElementById('trainNumberInput').value;
+  if (!trainNumber) {
+          alert("Please enter the train number.");
+          return;
+        }
+  let route = routes[routeId];
+  google.script.run
+    .withSuccessHandler(updateDisplay)
+    .withFailureHandler(handleError)
+    .claimRoute(currentTeamId, route,startStationId, trainNumber);
+}
+
+//Challenge related functions
+      
+function initiateChallenge() {
+  
+
+  getUserLocation()
+  .then(location => {
+    const nearestStation = findNearestStation(location.lat, location.lon, stations);
+    if (nearestStation) {
+      setChallengeLocation(nearestStation);
+    } else {
+      displayStationDropdown("challenge");
+    }
+  })
+  .catch(error => {
+    console.error("Error getting user location:", error);
+    displayStationDropdown("challenge");
+  });
+}
+
+function selectChallengeLocation() {
+  let stationId = document.getElementById('challengeStationDropdown').value;
+  setChallengeLocation(stations[stationId]);
+}
+
+function setChallengeLocationDiv(station){
+  let challengeLocationElement = document.getElementById('challengeLocation');
+  let locationText = `${station.name} (${station.canton}, ${station.altitude} m)`
+  challengeLocationElement.innerHTML = `The challenge will take place in ${locationText}`;
+  challengeLocationElement.dataset.stationId = station.id;
+  document.getElementById('challengeLocationFinish').innerHTML = `You are doing a challenge in ${locationText}. Please select below the challenge you have completed and confirm with the button or cancel. `
+}
+
+function setChallengeLocation(station){
+  setChallengeLocationDiv(station);
+  document.getElementById('challengeLocation').style.display = 'block';
+  document.getElementById('drawChallengeButton').style.display = 'block'; 
+}
+
+function drawChallenges(){
+  let stationId = document.getElementById('challengeLocation').dataset.stationId
+  let station = stations[stationId]
+  document.getElementById('ticketSection').style.display = 'none';
+  document.getElementById('claimInitiation').style.display = 'none';
+  document.getElementById('challengeSection').style.display = 'none';
+  document.getElementById('challengeOptionsSection').style.display = 'block';
+  google.script.run
+    .withSuccessHandler(displayChallengeOptions)
+    .provideChallengeOptions(currentTeamId,station);
+}
+
+
+function displayChallengeOptions(challenges) {
+
+  let challengeList = document.getElementById('challengeList');
+  challengeList.innerHTML = '';
+
+  challenges.forEach((challenge, index) => {
+    let challengeDiv = document.createElement('div');
+    //let color = ticketColors[index];
+    challengeDiv.innerHTML = `
+      <input type="radio" id="challenge${index}" onchange="toggleChallenge(${index})">
+      <label for="challenge${index}">${challenge.title} (${challenge.region}, ${challenge.reward} Coins)</label>
+    `;
+    challengeList.appendChild(challengeDiv);
+    
+    selectedChallenges[index] = challenge;
+  });
+}
+
+function toggleChallenge(index) {
+  selectedChallenges[index].selected = document.getElementById(`challenge${index}`).checked;
+}
+
+function confirmChallengeSelection() {
+  let stationId = document.getElementById('challengeLocation').dataset.stationId
+  let station = stations[stationId]
+  let selectedChallengeData = selectedChallenges.filter(challenge => challenge.selected);
+  console.log("Selected Challenges: ",selectedChallengeData)
+  if (selectedChallengeData.length < 1){
+    alert ("Please select a challenge.")
+    return;
+  }
+  google.script.run
+    .withSuccessHandler(updateDisplay)
+    .confirmChallengeSelection(currentTeamId, selectedChallengeData, station);
+  
+  document.getElementById('challengeOptionsSection').style.display = 'none';
+  document.getElementById('ticketSection').style.display = 'block';
+  document.getElementById('claimInitiation').style.display = 'block';
+  document.getElementById('challengeSection').style.display = 'block';
+  
+}
+
+function cancelChallengeSelection() {
+  document.getElementById('challengeOptionsSection').style.display = 'none';
+  document.getElementById('ticketSection').style.display = 'block';
+  document.getElementById('claimInitiation').style.display = 'block';
+  document.getElementById('challengeSection').style.display = 'block';
+  
+  google.script.run
+    .withSuccessHandler(updateDisplay)
+    .cancelChallengeSelection(currentTeamId);
+}
+      
+
+// Display related functions
+      function updateDisplay(data) {
+        console.log("Received data in updateDisplay:", data);
+        
+        if (!data || typeof data !== 'object') {
+          console.error("Invalid data received in updateDisplay");
+        }
+        else{
+          stations = data.stations;
+          routes = data.routes;
+          gameStatus = data.gameStatus;
+        }
+        if(data.message){
+          message = data.message;
+          if (message === "Route claimed") {
+            alert("This route has been already claimed. Please enter a valid route or abort the claim.");
+            return;
+          }
+          else if (message === "Route too expensive") {
+            alert("You don't have enough coins to claim this route. Please enter a cheaper route or abort the claim.");
+            return;
+          }
+        }
+
+        // Update map
+        if (map) {
+          updateMap(routes);          
+          updateTicketDisplay()
+          
+        } else {
+          console.warn("Map not initialized, skipping route update");
+        }
+
+        if(gameStatus){
+        // Update game status display
+        updateGameStatusDisplay();
+        
+
+        // Check if there's an ongoing claim
+        var currentTeamStatus = gameStatus[currentTeamId];
+
+        console.log("Current Team ID:", currentTeamId, "Current Team Status:", currentTeamStatus);
+        if (currentTeamStatus.latestAction === "Claim Initiated") {
+          document.getElementById('claimSection').style.display = 'block';
+          document.getElementById('claimInitiation').style.display = 'none';
+          document.getElementById('challengeSection').style.display = 'none';
+          document.getElementById('ticketOptionsSection').style.display = 'none';
+          document.getElementById('ticketSection').style.display = 'none';
+          setStartStationDisplay(stations[currentTeamStatus.location]);
+        } 
+        else if (currentTeamStatus.latestAction === "Drew tickets"){
+          document.getElementById('ticketSection').style.display = 'none';
+          document.getElementById('claimInitiation').style.display = 'none';
+          document.getElementById('challengeSection').style.display = 'none';
+          document.getElementById('ticketOptionsSection').style.display = 'block';
+          google.script.run.withSuccessHandler(displayTicketOptions).recreateTicketOptions(currentTeamId);
+        }
+        else if (currentTeamStatus.latestAction === "Drew challenges"){
+          document.getElementById('ticketSection').style.display = 'none';
+          document.getElementById('claimInitiation').style.display = 'none';
+          document.getElementById('challengeSection').style.display = 'none';
+          document.getElementById('challengeOptionsSection').style.display = 'block';
+          google.script.run
+          .withSuccessHandler(function(response){
+            let stationId = response[0];
+            let challengeData = response[1];
+            setChallengeLocationDiv(stations[stationId])
+            displayChallengeOptions(challengeData)
+          })
+          .recreateChallengeOptions(currentTeamId);
+        }
+        else {
+          document.getElementById('claimSection').style.display = 'none';
+          document.getElementById('ticketOptionsSection').style.display = 'none';
+          document.getElementById('claimInitiation').style.display = 'block';
+          document.getElementById('claimStationDropdown').style.display = 'none';
+          document.getElementById('selectStationButton').style.display = 'none';
+          document.getElementById('ticketSection').style.display = 'block';
+          document.getElementById('challengeSection').style.display = 'block';
+          document.getElementById('challengeLocation').style.display ='none';
+          if(currentTeamStatus.location.length === 3){
+            setStartStationDiv(currentTeamStatus.location)
+          }
+          else if(currentTeamStatus.location.length > 0){
+            google.script.run
+            .withSuccessHandler(function(response){
+              let stationId = response[0];
+              setStartStationDiv(stationId)
+            })
+            .recreateChallengeOptions(currentTeamId)
+          }
+        }
+        }
+      }
+
+      function updateGameStatusDisplay() {
+        var statusDiv = document.getElementById('gameStatus');
+        
+        var ticketDiv = document.getElementById('availableTickets');
+        
+        ticketDiv.innerHTML = `
+        <p>Tickets left in the stack: ${data.numberAvailableTickets}</p>
+        `
+        statusDiv.innerHTML = '';
+        for (var teamId in gameStatus) {
+          var team = gameStatus[teamId];
+          if(team.location !== ''){
+            if(team.location.length === 2){
+              let index = team.location+"1"
+              var location = stations[index].canton
+            }
+            else if (team.location.length === 1){
+              if(team.location==="D"){
+                var location = "Deutschland"
+              }
+              else if(team.location==="I"){
+                var location = "Italia"
+              }
+              else if(team.location==="F"){
+                var location = "France"
+              }
+              else if(team.location==="L"){
+                var location = "Liechtenstein"
+              }
+            }
+            else{
+              var location = stations[team.location].name +" ("+stations[team.location].canton+")";
+            }
+          } 
+          else{
+            var location ='unknown';
+          }
+          statusDiv.innerHTML += `
+          <h3>${teamId}</h3>
+          <p>Coins: ${team.coins}</p>
+          <p>Points: ${team.points}</p>
+          <p>Tickets: ${team.numberOfTickets}</p>
+          <p>Latest Action: ${team.latestAction}</p>
+          <p>Latest known location: ${location}</p>
+          `;
+        }
+      }
+
+      function updateTicketDisplay() {
+  google.script.run
+    .withSuccessHandler(displayTeamTickets)
+    .getTeamTickets(currentTeamId);
+}
+
+function displayTeamTickets(tickets) {
+  teamTickets = tickets;
+  let teamTicketsDiv = document.getElementById('teamTickets');
+  teamTicketsDiv.innerHTML = '<h3>Your Tickets:</h3>';
+  
+  tickets.forEach((ticket, index) => {
+    let color = ticketColors[index % ticketColors.length]; // Cycle through colors if more than 5 tickets
+    teamTicketsDiv.innerHTML += `<p>${index + 1}.: ${ticket.from.name} (${ticket.from.canton}) to ${ticket.to.name} (${ticket.to.canton}) (${ticket.points} points)</p>`;
+    highlightTicketOnMap(ticket, color,index);
+  });
+}
+
+function highlightTicketOnMap(ticket,color,index) {
+  let startMarker = L.marker([ticket.from.lat, ticket.from.lon], {
+    //color: color,
+    fillColor: color,
+    //fillOpacity: 0.8,
+    //radius: 8
+  }).addTo(map);
+  startMarker.bindPopup(`Ticket ${index + 1} Start: ${ticket.from.name}`);
+  
+  let endMarker = L.marker([ticket.to.lat, ticket.to.lon], {
+    //color: color,
+    fillColor: color,
+    //fillOpacity: 0.8,
+    //radius: 8
+  }).addTo(map);
+  endMarker.bindPopup(`Ticket ${index + 1} End: ${ticket.to.name}`);
+  
+  ticketMarkers.push(startMarker, endMarker);
+}
+
+    
+
+
+function startPolling() {
+  // Fetch data immediately
+  fetchLatestData();
+  
+  // Then set up regular polling every 30 seconds
+  pollingInterval = setInterval(fetchLatestData, 30000);
+}
+
+function stopPolling() {
+  clearInterval(pollingInterval);
+}
+
+function fetchLatestData() {
+  console.log("Fetchlatestdata called")
+  google.script.run
+    .withSuccessHandler(function(d) {
+      data = d;
+      stations = d.stations;
+      routes = d.routes;
+      gameStatus = d.gameStatus; 
+      if (map) {
+        updateDisplay(d);
+      } else {
+        console.warn("Map not initialized, waiting for next update");
+      }
+       
+      
+      })
+    .withFailureHandler(handleError)
+    .getStationsAndRoutes();
+}
+
+// Call this when the page loads
+window.onload = function() {
+  startPolling();
+};
+
+    </script>
+  </body>
+</html>
