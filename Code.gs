@@ -150,10 +150,10 @@ function generateTicket(){
   if (start.canton !== end.canton){
     bonus++;
   }
-  if (start.canton === "Appenzell Innerrhoden" || start.canton === "Appenzell Ausserrhoden" || start.canton === "Nidwalden"|| start.canton === "Obwalden" || start.canton === "Glarus" || start.canton === "Italia" || start.canton === "Deutschland" || start.canton === "Liechtenstein" || start.canton === "France"  ){
+  if (start.canton === "Appenzell Innerrhoden" || start.canton === "Appenzell Ausserrhoden" || start.canton === "Nidwalden"|| start.canton === "Obwalden" || start.canton === "Glarus" || start.canton === "Deutschland" || start.canton === "Liechtenstein" || start.canton === "France"  ){
     bonus++;
   }
-  if (end.canton === "Appenzell Innerrhoden" || end.canton === "Appenzell Ausserrhoden" || end.canton === "Nidwalden"|| end.canton === "Obwalden" || end.canton === "Glarus" || end.canton === "Italia" || end.canton === "Deutschland" || end.canton === "Liechtenstein" || end.canton === "France" ){
+  if (end.canton === "Appenzell Innerrhoden" || end.canton === "Appenzell Ausserrhoden" || end.canton === "Nidwalden"|| end.canton === "Obwalden" || end.canton === "Glarus" || end.canton === "Deutschland" || end.canton === "Liechtenstein" || end.canton === "France" ){
     bonus++;
   }
   if(start.longDistance ==="N"){
@@ -296,8 +296,10 @@ function sendTicketEmail(teamId, tickets) {
 function sendTicketEmailToOtherTeam(teamId, numberTickets,availableNumberOfTickets) {
   var otherTeamEmail = getOtherTeamEmail(teamId);
   var subject = "Tickets drawn in "+GAMETITLE;
-  var body = `${teamId} drew ${numberTickets} new tickets. There are ${availableNumberOfTickets} Tickets left in the stack.`;
-  GmailApp.sendEmail(otherTeamEmail, subject, body);
+  if(otherTeamEmail){
+    var body = `${teamId} drew ${numberTickets} new tickets. There are ${availableNumberOfTickets} Tickets left in the stack.`;
+    GmailApp.sendEmail(otherTeamEmail, subject, body);
+  }
 }
 
 function getCoordinates(city) {
@@ -308,19 +310,6 @@ function getCoordinates(city) {
   coordinates.alt = elevation
   //Logger.log(coordinates);
   return coordinates;
-}
-
-function completeChallenge(teamId, challenge) {
-  const challengesSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CHALLENGES_SHEET);
-  const challenges = challengesSheet.getDataRange().getValues();
-  for (let i = 1; i < challenges.length; i++) {
-    if (challenges[i][0] === challenge) {
-      const points = challenges[i][1];
-      updateScore(teamId, "Completed challenge", 0, points,0,0,"",challenge.id);
-      return points;
-    }
-  }
-  return 0;
 }
 
 function updateScore(teamId, status, cost, gain, points, tickets,location,challengeId) {
@@ -343,6 +332,15 @@ function updateScore(teamId, status, cost, gain, points, tickets,location,challe
       if(challengeId !== ''){
         sheet.getRange(i +1,10).setValue(challengeId)
       }
+      if(status === 'Started challenge'){
+        sheet.getRange(i +1,11).setValue("Y")
+      }
+      else if(status === 'Completed challenge'){
+        sheet.getRange(i +1,11).setValue("N")
+      }
+      else if(status === 'Cancelled challenge'){
+        sheet.getRange(i +1,11).setValue("N")
+      }
     }
   }
 }
@@ -361,8 +359,8 @@ function getPublicGameData() {
       latestAction: row[4],
       numberOfTickets: row[7],
       location: row[8],
-      latestChallenge: row[9]
-
+      latestChallenge: row[9],
+      ongoingChallenge: row[10]
     };
   }
   return gameStatus
@@ -543,15 +541,19 @@ function abortClaim(teamId){
 function sendClaimAbortionEmail(teamId) {
   var otherTeamEmail = getOtherTeamEmail(teamId);
   var subject = "Claim Aborted in "+GAMETITLE;
-  var body = `${teamId} has aborted their claim.`;
-  GmailApp.sendEmail(otherTeamEmail, subject, body);
+  if(otherTeamEmail){
+    var body = `${teamId} has aborted their claim.`;
+    GmailApp.sendEmail(otherTeamEmail, subject, body);
+  }
 }
 
 function sendClaimInitiationEmail(teamId, station) {
   var otherTeamEmail = getOtherTeamEmail(teamId);
   var subject = "Claim Initiated in "+GAMETITLE;
-  var body = `${teamId} has initiated a claim at ${station.name} (${station.canton}).`;
-  GmailApp.sendEmail(otherTeamEmail, subject, body);
+  if(otherTeamEmail){
+    var body = `${teamId} has initiated a claim at ${station.name} (${station.canton}).`;
+    GmailApp.sendEmail(otherTeamEmail, subject, body);
+  }
 }
 
 function claimRoute(teamId, route,startStationId, trainNumber) {
@@ -585,8 +587,10 @@ function claimRoute(teamId, route,startStationId, trainNumber) {
 function sendClaimCompletionEmail(teamId, routeString) {
   var otherTeamEmail = getOtherTeamEmail(teamId);
   var subject = "Route Claimed in "+GAMETITLE;
-  var body = `${teamId} has claimed the following route: ${routeString}.`;
-  GmailApp.sendEmail(otherTeamEmail, subject, body);
+  if(otherTeamEmail){
+    var body = `${teamId} has claimed the following route: ${routeString}.`;
+    GmailApp.sendEmail(otherTeamEmail, subject, body);
+  }
 }
 
 function getTeamEmail(teamId){
@@ -595,11 +599,16 @@ function getTeamEmail(teamId){
   let teamEmail = '';
   for (let i = 0; i < teamData.length; i++) {
     if (teamData[i][0] === teamId) {
-      teamEmail = [teamData[i][1],teamData[i][2]];
-      break;
+      if(teamData[i][1]){
+        teamEmail = [teamData[i][1],teamData[i][2]];
+        return teamEmail;
+      }
+      else{
+        return false;
+      }
     }
   }
-  return teamEmail;
+  
 }
 
 function getOtherTeamEmail(teamId) {
@@ -608,11 +617,15 @@ function getOtherTeamEmail(teamId) {
   let teamEmail = '';
   for (let i = 0; i < teamData.length; i++) {
     if (teamData[i][0] !== teamId) {
-      teamEmail = [teamData[i][1],teamData[i][2]];
-      break;
+      if(teamData[i][1]){
+        teamEmail = [teamData[i][1],teamData[i][2]];
+        return teamEmail;
+      }
+      else{
+        return false;
+      }
     }
   }
-  return teamEmail;
 }
 
 function calculateDistance(lat1, lon1, lat2, lon2) {
@@ -739,15 +752,17 @@ function provideChallengeOptions(teamId,station){
     temporaryChallengeSheet.appendRow([challenge[0],challenge[1],challenge[2],challenge[6],"cantonal"])
   }
   Logger.log(challengeOptions)
-  sendChallengeOptionsEmail(teamId,challengeOptions)
+  
   updateScore(teamId,"Drew challenges",0,0,0,0,'','')
+  sendChallengeOptionsEmail(teamId,challengeOptions)
   return challengeOptions;
 }
 
 function recreateChallengeOptions(teamId){
   var temporaryChallengeSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(teamId + " Temporary Challenges")
   var locationId = temporaryChallengeSheet.getRange("A1").getValue()
-  var challengeData = temporaryChallengeSheet.getRange("A3:E5").getValues()
+  let lastRow = temporaryChallengeSheet.getLastRow()
+  var challengeData = temporaryChallengeSheet.getRange("A3:E"+lastRow).getValues()
   challengeOptions = [];
   challengeData.forEach(challenge =>{
     challengeOptions.push({id:challenge[0],title:challenge[1],text:challenge[2],reward:challenge[3],region:challenge[4]})
@@ -755,40 +770,54 @@ function recreateChallengeOptions(teamId){
   return([locationId,challengeOptions])
 }
 
-function confirmChallengeSelection(currentTeamId, selectedChallengeData, station){
+function challengeSelection(teamId,selectedChallenge,station){
+  var temporaryChallengeSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(teamId + " Temporary Challenges")
+  let numRows = temporaryChallengeSheet.getLastRow() -2;
+  temporaryChallengeSheet.deleteRows(3,numRows);
+  let  challengeId = selectedChallenge.id;
+  let  reward = selectedChallenge.reward
+  let text =selectedChallenge.text
+  let  title = selectedChallenge.title
+  let  region = selectedChallenge.region
+  temporaryChallengeSheet.appendRow([challengeId,title,text,reward,region])
+  updateScore(teamId,"Started challenge",0,0,0,0,"","")
+}
+
+function confirmChallengeCompletion(currentTeamId){
+  currentTeamId = "Team A"
   var temporaryChallengeSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(currentTeamId + " Temporary Challenges")
-  temporaryChallengeSheet.deleteRows(3,3);
-  let challengeId;
-  let reward;
-  let title;
-  let region;
+  
   const swissCantons = cantonDict()
-  Object.values(selectedChallengeData).forEach(challenge=> {
-    challengeId = challenge.id;
-    reward = challenge.reward
-    title = challenge.title
-    region = challenge.region
-  })
+  var challenge = temporaryChallengeSheet.getRange("A3:E3").getValues()[0]
+  var stationId = temporaryChallengeSheet.getRange("A1").getValue()
+  var stationName = temporaryChallengeSheet.getRange("B1").getValue()
+  var canton = temporaryChallengeSheet.getRange("C1").getValue()
+  let  challengeId = challenge[0];
+  let  reward = challenge[3]
+  let  title = challenge[1]
+  let  region = challenge[4]
+  temporaryChallengeSheet.deleteRows(3,1);
    
   if(region === "local"){
-    var locationId = station.id
-    var location = station.name+" ("+station.canton+")"
+    var locationId = stationId
+    var location = stationName+" ("+canton+")"
   }
   else if (region === "cantonal"){
-    var locationId = swissCantons[station.canton]
-    var location = station.canton
+    var locationId = swissCantons[canton]
+    var location = canton
   }
-  updateScore(currentTeamId,"Completed challenge "+title+" in "+location,0,reward,0,0,locationId,challengeId)
+  updateScore(currentTeamId,"Completed challenge",0,reward,0,0,locationId,challengeId)
   sendChallengeCompletionEmail(currentTeamId,title,location,reward)
   return getStationsAndRoutes()
 }
 
 function cancelChallengeSelection(currentTeamId){
   var temporaryChallengeSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(currentTeamId + " Temporary Challenges")
-  temporaryChallengeSheet.deleteRows(3,3);
+  let numRows = temporaryChallengeSheet.getLastRow() -2;
+  temporaryChallengeSheet.deleteRows(3,numRows);
   var currentCoins = getPublicGameData()[currentTeamId].coins
   var penalty = Math.floor(CHALLENGE_PENALTY*currentCoins)
-  updateScore(currentTeamId,"Cancelled challenge selection",penalty,0,0,0,'','')
+  updateScore(currentTeamId,"Cancelled challenge",penalty,0,0,0,'','')
   return getStationsAndRoutes()
 }
 
@@ -796,7 +825,9 @@ function sendChallengeCompletionEmail(currentTeamId,title,location,reward){
   var otherTeamEmail = getOtherTeamEmail(currentTeamId);
   var subject = "Challenge completed in "+GAMETITLE;
   var body = `${currentTeamId} has completed challenge ${title} in ${location}`;
-  GmailApp.sendEmail(otherTeamEmail, subject, body);
+  if(otherTeamEmail){
+    GmailApp.sendEmail(otherTeamEmail, subject, body);
+  }
 }
 
 function sendChallengeOptionsEmail(teamId,challengeOptions){
@@ -809,7 +840,9 @@ function sendChallengeOptionsEmail(teamId,challengeOptions){
       emailBody += `${index + 1}. ${challenge.title} (${challenge.region}) for ${challenge.reward} Coins: ${challenge.text}\n`;
     });
   emailBody += `\n You can still cancel, but at this moment, it would cost you ${penalty} Coins.`
+  if(teamEmail){
     GmailApp.sendEmail(teamEmail, subject, emailBody);
+  }
 }
 
 function createListOfChallenges(){

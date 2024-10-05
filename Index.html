@@ -76,7 +76,7 @@
 
 
 <div id="challengeSection" style="display:block;">
-  <h3>Complete a challenge</h3>
+  <h3>Draw a challenge</h3>
   <p><b>Attention:</b> Once you draw challenges, you will be provided with three random challenge options. If none of them suits you, you can cancel, but it will cost you 20% of your current Coins.</p>
       <button onclick="initiateChallenge()">Set Challenge Location</button>
       <select id="challengeStationDropdown" style="display:none;"></select>
@@ -85,12 +85,21 @@
       <button id="drawChallengeButton" onclick="drawChallenges()" style="display:none;">Draw Challenges</button>
 </div>
 <div id="challengeOptionsSection" style="display:none;">
-  <h3>Select the completed challenge</h3>
-  <p> Once you completed one of the following challenges, select and confirm. If you cancel, it will cost you 20 % of your current Coins.</p>
+  <h3>Select the challenge</h3>
+  <p> Choose one of the following challenges you want to try. If you cancel, it will cost you 20 % of your current Coins.</p>
   <div id="challengeLocationFinish" style="display:block;"></div>
   <div id="challengeList"></div>
   <button onclick="confirmChallengeSelection()">Confirm</button>
   <button onclick="cancelChallengeSelection()">Cancel</button>
+</div>
+<div id="challengeCompletionSection" style="display:none;">
+  <h3>Complete the challenge</h3>
+<p> You are trying the following challenge. Confirm if you complete the challenge and don't forget to send proof to the other team.</p>
+<p> If you want to cancel, it will cost you 20 % of your current Coins.</p>
+<div id="challengeText"></div>
+<div id="challengeLocationCompletion" style="display:none;"></div>
+<button onclick="confirmChallengeCompletion()">Confirm</button>
+<button onclick="cancelChallengeSelection()">Cancel</button>
 </div>
       <div id="gameStatus"></div>
       <div id="teamTickets"></div>
@@ -204,7 +213,7 @@
             
             if(possibleLocalChallengeIds[0]){
               possibleLocalChallengeIds.forEach(challenge =>{
-                console.log("Challenges:",challenges[challenge])
+                //console.log("Challenges:",challenges[challenge])
                 possibleChallenges += challenges[challenge].title+"; "
                 
               })
@@ -373,7 +382,7 @@ function updateMap(routes) {
     let from = stations[route.from];
     let to = stations[route.to];
     let color = getRouteColor(route.claimedBy);
-    let line = L.polyline([[from.lat, from.lon], [to.lat, to.lon]], {color: color, weight: 2}).addTo(map);
+    let line = L.polyline([[from.lat, from.lon], [to.lat, to.lon]], {color: color, weight: 5}).addTo(map);
     line.bindPopup(`<b>${from.name} (${route.fromCanton}) to ${to.name} (${route.toCanton})</b><br>Cost: ${route.cost} Coins<br>Reward: ${route.points} Points<br>Claimed by: ${route.claimedBy || 'Unclaimed'}`);
     routeLayers.push(line);
   });
@@ -578,14 +587,23 @@ function displayRouteDropdown(possibleRoutes) {
 }
 
 function claimSelectedRoute() {
-  let routeId = document.getElementById('routeDropdown').value;
-  var startStationId = document.getElementById('startStation').dataset.stationId;
   let trainNumber = document.getElementById('trainNumberInput').value;
+
   if (!trainNumber) {
           alert("Please enter the train number.");
           return;
         }
+  document.getElementById('claimSection').style.display = 'none';
+  document.getElementById('claimInitiation').style.display = 'block';
+  document.getElementById('claimStationDropdown').style.display = 'none';
+  document.getElementById('selectStationButton').style.display = 'none';
+  document.getElementById('startStation').style.display = 'none';
+  document.getElementById('startClaimButton').style.display = 'none'
+  let routeId = document.getElementById('routeDropdown').value;
+  var startStationId = document.getElementById('startStation').dataset.stationId;
+  
   let route = routes[routeId];
+  gameStatus[currentTeamId].latestAction = "Route claimed"
   google.script.run
     .withSuccessHandler(updateDisplay)
     .withFailureHandler(handleError)
@@ -622,7 +640,7 @@ function setChallengeLocationDiv(station){
   let locationText = `${station.name} (${station.canton}, ${station.altitude} m)`
   challengeLocationElement.innerHTML = `The challenge will take place in ${locationText}`;
   challengeLocationElement.dataset.stationId = station.id;
-  document.getElementById('challengeLocationFinish').innerHTML = `You are doing a challenge in ${locationText}. Please select below the challenge you have completed and confirm with the button or cancel. `
+  document.getElementById('challengeLocationFinish').innerHTML = `You are doing a challenge in ${locationText}.`
 }
 
 function setChallengeLocation(station){
@@ -675,15 +693,8 @@ function confirmChallengeSelection() {
     alert ("Please select a challenge.")
     return;
   }
-  google.script.run
-    .withSuccessHandler(updateDisplay)
-    .confirmChallengeSelection(currentTeamId, selectedChallengeData, station);
-  
-  document.getElementById('challengeOptionsSection').style.display = 'none';
-  document.getElementById('ticketSection').style.display = 'block';
-  document.getElementById('claimInitiation').style.display = 'block';
-  document.getElementById('challengeSection').style.display = 'block';
-  
+  updateChallengeCompletionSection(selectedChallengeData[0],station)
+  google.script.run.challengeSelection(currentTeamId, selectedChallengeData[0], station)
 }
 
 function cancelChallengeSelection() {
@@ -691,10 +702,70 @@ function cancelChallengeSelection() {
   document.getElementById('ticketSection').style.display = 'block';
   document.getElementById('claimInitiation').style.display = 'block';
   document.getElementById('challengeSection').style.display = 'block';
+  document.getElementById('challengeStationDropdown').style.display = 'none';
+  document.getElementById('selectLocationButton').style.display = 'none';
+  document.getElementById('challengeLocation').style.display = 'none';
+  document.getElementById('drawChallengeButton').style.display = 'none';
   
   google.script.run
     .withSuccessHandler(updateDisplay)
     .cancelChallengeSelection(currentTeamId);
+}
+
+function updateChallengeCompletionSection(selectedChallenge,station){
+
+  document.getElementById('challengeCompletionSection').style.display = 'block';
+  document.getElementById('challengeOptionsSection').style.display = 'none';
+  document.getElementById('challengeSection').style.display = 'none';
+  
+  challengeText = document.getElementById('challengeText');
+  challengeLocationDiv = document.getElementById('challengeLocationCompletion')
+  challengeText.innerHTML = `
+          <p><b>${selectedChallenge.title}</b> (${selectedChallenge.region}) for ${selectedChallenge.reward} Coins:<br> ${selectedChallenge.text}<br><br></p>
+      `;
+  if(selectedChallenge.region == "local"){
+    challengeLocationDiv.innerHTML =`
+    <p> You have to complete the challenge in the vicinity of the following station: ${station.name} (${station.canton}).</p>
+    `
+    challengeLocationDiv.style.display = 'block'
+    document.getElementById('claimInitiation').style.display = 'none';
+    document.getElementById('ticketSection').style.display = 'none';
+  }
+  else if(selectedChallenge.region == "cantonal"){
+    console.log("The ongoing challenge is cantonal")
+    if(gameStatus[currentTeamId].latestAction !== "Claim Initiated"){
+      console.log("There is no ongoing claim")
+      document.getElementById('claimInitiation').style.display = 'block';
+      document.getElementById('startStation').style.display = 'none';
+      document.getElementById('startClaimButton').style.display = 'none'
+      document.getElementById('claimSection').style.display = 'none';
+      document.getElementById('ticketSection').style.display = 'none';
+    }
+    else {
+      console.log("There is an ongoing claim")
+      document.getElementById('claimSection').style.display = 'block';
+      document.getElementById('claimInitiation').style.display = 'none';
+      setStartStationDisplay(stations[gameStatus[currentTeamId].location]);
+    }
+  }
+}
+
+
+function confirmChallengeCompletion(){
+  google.script.run
+    .withSuccessHandler(updateDisplay)
+    .confirmChallengeCompletion(currentTeamId);
+  
+  document.getElementById('challengeOptionsSection').style.display = 'none';
+  document.getElementById('ticketSection').style.display = 'block';
+  document.getElementById('claimInitiation').style.display = 'block';
+  document.getElementById('challengeSection').style.display = 'block';
+  document.getElementById('challengeCompletionSection').style.display = 'none';
+  document.getElementById('challengeStationDropdown').style.display = 'none';
+  document.getElementById('selectLocationButton').style.display = 'none';
+  document.getElementById('challengeLocation').style.display = 'none';
+  document.getElementById('drawChallengeButton').style.display = 'none';
+  
 }
       
 
@@ -740,7 +811,20 @@ function cancelChallengeSelection() {
         var currentTeamStatus = gameStatus[currentTeamId];
 
         console.log("Current Team ID:", currentTeamId, "Current Team Status:", currentTeamStatus);
-        if (currentTeamStatus.latestAction === "Claim Initiated") {
+        if(currentTeamStatus.ongoingChallenge === "Y"){
+          google.script.run
+          .withSuccessHandler(function(response){
+            let stationId = response[0];
+            let challengeData = response[1];
+            updateChallengeCompletionSection(challengeData[0],stations[stationId])
+            console.log("ChallengeCompletion Section loaded ")
+          })
+          .recreateChallengeOptions(currentTeamId)
+          
+          document.getElementById('ticketOptionsSection').style.display = 'none';
+          document.getElementById('ticketSection').style.display = 'none';   
+        }
+        else if (currentTeamStatus.latestAction === "Claim Initiated") {
           document.getElementById('claimSection').style.display = 'block';
           document.getElementById('claimInitiation').style.display = 'none';
           document.getElementById('challengeSection').style.display = 'none';
@@ -775,9 +859,14 @@ function cancelChallengeSelection() {
           document.getElementById('claimInitiation').style.display = 'block';
           document.getElementById('claimStationDropdown').style.display = 'none';
           document.getElementById('selectStationButton').style.display = 'none';
+          document.getElementById('startStation').style.display = 'none';
+          document.getElementById('startClaimButton').style.display = 'none'
           document.getElementById('ticketSection').style.display = 'block';
           document.getElementById('challengeSection').style.display = 'block';
           document.getElementById('challengeLocation').style.display ='none';
+          document.getElementById('challengeOptionsSection').style.display = 'none';
+          document.getElementById('challengeCompletionSection').style.display = 'none';
+
           if(currentTeamStatus.location.length === 3){
             setStartStationDiv(currentTeamStatus.location)
           }
@@ -804,6 +893,15 @@ function cancelChallengeSelection() {
         statusDiv.innerHTML = '';
         for (var teamId in gameStatus) {
           var team = gameStatus[teamId];
+          if(team.challenge !== ''){
+            if(globalChallenges.length>0){
+              var challengeTitle = globalChallenges[team.challenge].title
+            }
+            else {var challengeTitle = ''}
+          }
+          else{
+            var challengeTitle = "No challenge completed yet"
+          }
           if(team.location !== ''){
             if(team.location.length === 2){
               let index = team.location+"1"
