@@ -784,7 +784,7 @@ function challengeSelection(teamId,selectedChallenge,station){
 }
 
 function confirmChallengeCompletion(currentTeamId){
-  currentTeamId = "Team A"
+  //currentTeamId = "Team A"
   var temporaryChallengeSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(currentTeamId + " Temporary Challenges")
   
   const swissCantons = cantonDict()
