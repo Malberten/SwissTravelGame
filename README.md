@@ -19,5 +19,5 @@ Once installed, the game must be setup:
 - Then go to the agreed start location. As a first move, both teams should draw and choose tickets. Then the game starts.
 
 ## Known issues
-Some parts are not coded in the most efficient way. For example, the finishing of a claim takes a lot of time, because many server-side functions are called. If you want to contribute, you are free to fork the project, or write to me under merten<at>mertensworld.ch.
+Some parts are not coded in the most efficient way. For example, the finishing of a claim takes a lot of time, because many server-side functions are called. If you want to contribute, you are free to fork the project, or [send me a message](https://mertensworld.ch/contact/).
 
